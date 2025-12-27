@@ -1,5 +1,7 @@
+import 'dart:io'; // <-- NEW: Needed to display files
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Import the new package
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart'; // <-- NEW: The picker package
 import '../services/database_service.dart';
 import 'manage_categories_screen.dart';
 import 'manage_accounts_screen.dart';
@@ -14,11 +16,10 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  // Default values
   String _userName = "User";
-  int _avatarIndex = 0; // We save the "ID" of the avatar, not the icon itself
+  int _avatarIndex = 0; 
+  String? _profileImagePath; // <-- NEW: Holds path to custom photo
 
-  // The list of available avatars (Icon + Color)
   final List<Map<String, dynamic>> _avatarOptions = [
     {'icon': Icons.person, 'color': Colors.black},
     {'icon': Icons.face, 'color': Colors.blue},
@@ -31,7 +32,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUserProfile(); // <--- Load data when screen starts
+    _loadUserProfile();
   }
 
   // --- 1. LOAD DATA ---
@@ -40,24 +41,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _userName = prefs.getString('user_name') ?? "User";
       _avatarIndex = prefs.getInt('user_avatar_index') ?? 0;
+      _profileImagePath = prefs.getString('user_profile_image'); // Load the path
     });
   }
 
   // --- 2. SAVE DATA ---
-  Future<void> _saveUserProfile(String name, int avatarIndex) async {
+  Future<void> _saveUserProfile(String name, int avatarIndex, String? imagePath) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_name', name);
     await prefs.setInt('user_avatar_index', avatarIndex);
     
+    if (imagePath != null) {
+      await prefs.setString('user_profile_image', imagePath);
+    } else {
+      await prefs.remove('user_profile_image'); // Clear it if they went back to an icon
+    }
+    
     setState(() {
       _userName = name;
       _avatarIndex = avatarIndex;
+      _profileImagePath = imagePath;
     });
   }
 
+  // --- 3. PICK IMAGE FUNCTION ---
+  Future<String?> _pickImageFromGallery() async {
+    final ImagePicker picker = ImagePicker();
+    // Pick an image
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    return image?.path;
+  }
+
+
   @override
   Widget build(BuildContext context) {
-    // Get current avatar details based on index
     final currentAvatar = _avatarOptions[_avatarIndex];
 
     return Scaffold(
@@ -71,7 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 1. User Info Card (NOW PERSISTENT!)
+          // 1. User Info Card
           GestureDetector(
             onTap: _showEditProfileDialog,
             child: Container(
@@ -83,10 +100,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               child: Row(
                 children: [
+                  // --- MAIN AVATAR DISPLAY LOGIC ---
                   CircleAvatar(
                     radius: 30,
-                    backgroundColor: currentAvatar['color'],
-                    child: Icon(currentAvatar['icon'], size: 35, color: Colors.white),
+                    backgroundColor: _profileImagePath != null ? Colors.transparent : currentAvatar['color'],
+                    // If path exists, show file image. Else show nothing here.
+                    backgroundImage: _profileImagePath != null 
+                        ? FileImage(File(_profileImagePath!)) as ImageProvider
+                        : null,
+                    // If path is NULL, show the icon child.
+                    child: _profileImagePath == null 
+                        ? Icon(currentAvatar['icon'], size: 35, color: Colors.white)
+                        : null,
                   ),
                   const SizedBox(width: 15),
                   Column(
@@ -102,8 +127,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
           ),
-          
-          const SizedBox(height: 20),
+          // ... (Rest of your menu options remain the same) ...
+           const SizedBox(height: 20),
           const Text("General", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
           const SizedBox(height: 10),
 
@@ -156,29 +181,73 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // --- DIALOG: EDIT PROFILE ---
   void _showEditProfileDialog() {
     final TextEditingController nameController = TextEditingController(text: _userName);
-    int tempIndex = _avatarIndex; // Temp variable for dialog selection
+    int tempIndex = _avatarIndex; 
+    String? tempPath = _profileImagePath; // Temp path for dialog preview
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
+        // We use 'dialogSetState' here to update the UI *inside* the dialog
+        builder: (context, dialogSetState) {
           return AlertDialog(
             title: const Text("Edit Profile"),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text("Choose Avatar", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                const SizedBox(height: 15),
-                // Avatar Grid
+                // --- PREVIEW AREA ---
+                GestureDetector(
+                   onTap: () async {
+                      // Trigger image picker when tapping the big preview circle
+                      final path = await _pickImageFromGallery();
+                       if (path != null) {
+                        dialogSetState(() => tempPath = path);
+                       }
+                    },
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      CircleAvatar(
+                        radius: 40,
+                        backgroundColor: tempPath != null ? Colors.transparent : _avatarOptions[tempIndex]['color'],
+                        backgroundImage: tempPath != null 
+                            ? FileImage(File(tempPath!)) as ImageProvider
+                            : null,
+                        child: tempPath == null 
+                            ? Icon(_avatarOptions[tempIndex]['icon'], size: 40, color: Colors.white)
+                            : null,
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                        child: const Icon(Icons.camera_alt, size: 16, color: Colors.black),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text("Tap above to upload photo", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                
+                const SizedBox(height: 20),
+                const Text("Or choose an avatar:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                const SizedBox(height: 10),
+                
+                // --- ICON GRID ---
                 Wrap(
                   spacing: 15,
                   runSpacing: 15,
                   alignment: WrapAlignment.center,
                   children: List.generate(_avatarOptions.length, (index) {
                     final option = _avatarOptions[index];
-                    final isSelected = tempIndex == index;
+                    // Selected if index matches AND we aren't using a custom photo
+                    final isSelected = tempIndex == index && tempPath == null;
                     return GestureDetector(
-                      onTap: () => setState(() => tempIndex = index),
+                      onTap: () {
+                         // If they click an icon, clear the custom photo path
+                         dialogSetState(() {
+                           tempIndex = index;
+                           tempPath = null; 
+                         });
+                      },
                       child: CircleAvatar(
                         radius: 22,
                         backgroundColor: option['color'].withOpacity(isSelected ? 1.0 : 0.2),
@@ -204,8 +273,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ElevatedButton(
                 onPressed: () {
                   final newName = nameController.text.isEmpty ? "User" : nameController.text;
-                  // SAVE to persistent storage
-                  _saveUserProfile(newName, tempIndex);
+                  // SAVE all data including the new path (or null path)
+                  _saveUserProfile(newName, tempIndex, tempPath);
                   Navigator.pop(context);
                 },
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white),
