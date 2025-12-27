@@ -4,10 +4,25 @@ import '../models/account.dart';
 import '../models/transaction.dart';
 import '../services/database_service.dart';
 
-class Dashboard extends StatelessWidget {
+class Dashboard extends StatefulWidget {
   final DatabaseService databaseService;
 
   const Dashboard({super.key, required this.databaseService});
+
+  @override
+  State<Dashboard> createState() => _DashboardState();
+}
+
+class _DashboardState extends State<Dashboard> {
+  // 1. STATE VARIABLE: Holds the currently selected month
+  DateTime _selectedMonth = DateTime.now();
+
+  // Helper to change months
+  void _changeMonth(int monthsToAdd) {
+    setState(() {
+      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + monthsToAdd, 1);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +36,7 @@ class Dashboard extends StatelessWidget {
       backgroundColor: Colors.grey[100],
       
       body: StreamBuilder<List<Account>>(
-        stream: databaseService.streamAccounts(),
+        stream: widget.databaseService.streamAccounts(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -63,41 +78,93 @@ class Dashboard extends StatelessWidget {
 
                   const SizedBox(height: 20),
 
-                  // --- SECTION C: RECENT TRANSACTIONS ---
-                  const Text("Recent Transactions", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  // --- SECTION C: RECENT TRANSACTIONS HEADER & FILTER ---
+                  // 2. NEW MONTH SELECTOR UI
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Recent Transactions", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      
+                      // Month Selector Buttons
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          children: [
+                            InkWell(
+                              onTap: () => _changeMonth(-1),
+                              child: const Icon(Icons.chevron_left, size: 20),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              DateFormat('MMM yyyy').format(_selectedMonth),
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: () => _changeMonth(1),
+                              child: const Icon(Icons.chevron_right, size: 20),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 10),
                   
                   StreamBuilder<List<Transaction>>(
-                    stream: databaseService.streamRecentTransactions(),
+                    stream: widget.databaseService.streamRecentTransactions(),
                     builder: (context, txSnapshot) {
                       if (!txSnapshot.hasData || txSnapshot.data!.isEmpty) {
                         return const Center(child: Text("No transactions yet.", style: TextStyle(color: Colors.grey)));
                       }
 
-                      final transactions = txSnapshot.data!;
+                      final allTransactions = txSnapshot.data!;
+                      
+                      // 3. APPLY FILTER: Only show transactions for _selectedMonth
+                      final transactions = allTransactions.where((tx) {
+                        return tx.date.year == _selectedMonth.year && 
+                               tx.date.month == _selectedMonth.month;
+                      }).toList();
+
+                      if (transactions.isEmpty) {
+                        return Container(
+                          padding: const EdgeInsets.all(20),
+                          width: double.infinity,
+                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                          child: Center(
+                            child: Text(
+                              "No transactions in ${DateFormat('MMMM').format(_selectedMonth)}",
+                              style: const TextStyle(color: Colors.grey),
+                            ),
+                          ),
+                        );
+                      }
                       
                       return Column(
-                        children: transactions.take(10).map((tx) { // Increased to show last 10
+                        children: transactions.map((tx) { // Removed .take(10) so you see all for the month
                           // 1. Color & Icon Logic
                           Color color = tx.type == 0 ? Colors.green : (tx.type == 1 ? Colors.red : Colors.blue);
                           String sign = tx.type == 0 ? "+" : (tx.type == 1 ? "-" : "");
                           IconData icon = tx.type == 0 ? Icons.arrow_downward : (tx.type == 1 ? Icons.arrow_upward : Icons.swap_horiz);
                           
-                          // 2. Format Date (e.g., "Dec 19, 10:30 AM")
+                          // 2. Format Date
                           String formattedDate = DateFormat('MMM d, h:mm a').format(tx.date);
 
-                          // 3. Construct Subtitle (Account • Date)
+                          // 3. Construct Subtitle
                           String accountInfo = tx.accountName;
-                          
-                          // If it's a transfer, show "HNB -> Wallet"
                           if (tx.type == 2 && tx.destinationAccountName != null) {
                             accountInfo = "${tx.accountName} ➝ ${tx.destinationAccountName}";
                           }
 
                           return _buildTransactionItem(
-                            tx.categoryName ?? "Transfer", // Title (e.g., Food)
-                            "$accountInfo  •  $formattedDate", // Subtitle (e.g., Cash • Dec 19, 10:30 AM)
-                            "$sign LKR ${tx.amount.toStringAsFixed(0)}", // Amount
+                            tx.categoryName ?? "Transfer", 
+                            "$accountInfo  •  $formattedDate", 
+                            "$sign LKR ${tx.amount.toStringAsFixed(0)}", 
                             color,
                             icon
                           );
@@ -178,7 +245,7 @@ class Dashboard extends StatelessWidget {
           child: Icon(icon, color: color),
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)), // Made text slightly smaller/grey
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)), 
         trailing: Text(
           amount,
           style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 15),
