@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/database_service.dart';
-import 'manage_categories_screen.dart'; // Import the screen we just made
+import 'manage_categories_screen.dart';
+import 'manage_accounts_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   final DatabaseService databaseService;
@@ -11,7 +12,10 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Profile & Settings', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Profile & Settings',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
@@ -22,9 +26,16 @@ class ProfileScreen extends StatelessWidget {
         children: [
           // 1. User Info Card (Visual only)
           const UserInfoCard(),
-          
+
           const SizedBox(height: 20),
-          const Text("General", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
+          const Text(
+            "General",
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey,
+            ),
+          ),
           const SizedBox(height: 10),
 
           // 2. Manage Categories Button (LINKED!)
@@ -35,12 +46,15 @@ class ProfileScreen extends StatelessWidget {
             subtitle: "Add or remove expense categories",
             onTap: () {
               Navigator.push(
-                context, 
-                MaterialPageRoute(builder: (_) => ManageCategoriesScreen(databaseService: databaseService)),
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ManageCategoriesScreen(databaseService: databaseService),
+                ),
               );
             },
           ),
-          
+
           // 3. Manage Accounts Button (Coming Next)
           _buildProfileOption(
             context,
@@ -48,20 +62,42 @@ class ProfileScreen extends StatelessWidget {
             title: "Manage Accounts",
             subtitle: "Add banks, wallets, etc.",
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Building this next!")));
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ManageAccountsScreen(databaseService: databaseService),
+                ),
+              );
             },
           ),
 
           const SizedBox(height: 20),
-          const Text("Danger Zone", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red)),
+          const Text(
+            "Danger Zone",
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.red,
+            ),
+          ),
           const SizedBox(height: 10),
 
           // 4. Clear Data Button
           Container(
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: ListTile(
               leading: const Icon(Icons.delete_forever, color: Colors.red),
-              title: const Text("Erase All Data", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              title: const Text(
+                "Erase All Data",
+                style: TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               onTap: () => _showDeleteDialog(context),
             ),
           ),
@@ -72,7 +108,8 @@ class ProfileScreen extends StatelessWidget {
 
   // --- Helper Widgets ---
 
-  Widget _buildProfileOption(BuildContext context, {
+  Widget _buildProfileOption(
+    BuildContext context, {
     required IconData icon,
     required String title,
     required String subtitle,
@@ -83,7 +120,13 @@ class ProfileScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 5, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.05),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: ListTile(
         leading: CircleAvatar(
@@ -91,8 +134,15 @@ class ProfileScreen extends StatelessWidget {
           child: Icon(icon, color: Colors.blue),
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+        trailing: const Icon(
+          Icons.arrow_forward_ios,
+          size: 16,
+          color: Colors.grey,
+        ),
         onTap: onTap,
       ),
     );
@@ -103,16 +153,23 @@ class ProfileScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Are you sure?"),
-        content: const Text("This will delete ALL transactions and accounts permanently."),
+        content: const Text(
+          "This will delete ALL transactions and accounts permanently.",
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
           TextButton(
             onPressed: () async {
               // We added this function in the database service earlier
-              await databaseService.cleanDb(); 
+              await databaseService.cleanDb();
               if (context.mounted) {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Data Erased")));
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text("Data Erased")));
               }
             },
             child: const Text("Delete", style: TextStyle(color: Colors.red)),
@@ -145,7 +202,10 @@ class UserInfoCard extends StatelessWidget {
           const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("Thesara Subasinghe", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              Text(
+                "Thesara Subasinghe",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
               Text("User", style: TextStyle(color: Colors.grey)),
             ],
           ),
