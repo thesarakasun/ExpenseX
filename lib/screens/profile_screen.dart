@@ -54,7 +54,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (imagePath != null) {
       await prefs.setString('user_profile_image', imagePath);
     } else {
-      await prefs.remove('user_profile_image'); // Clear it if they went back to an icon
+      await prefs.remove('user_profile_image'); 
     }
     
     setState(() {
