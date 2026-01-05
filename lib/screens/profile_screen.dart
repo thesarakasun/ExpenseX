@@ -1,7 +1,9 @@
-import 'dart:io'; // <-- NEW: Needed to display files
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:image_picker/image_picker.dart'; // <-- NEW: The picker package
+import 'package:image_picker/image_picker.dart';
+import 'package:geolocator/geolocator.dart'; // GPS
+import 'package:geocoding/geocoding.dart';   // Address lookup
 import '../services/database_service.dart';
 import 'manage_categories_screen.dart';
 import 'manage_accounts_screen.dart';
@@ -18,7 +20,11 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   String _userName = "User";
   int _avatarIndex = 0; 
-  String? _profileImagePath; // <-- NEW: Holds path to custom photo
+  String? _profileImagePath;
+  
+  // Currency State
+  String _selectedCurrency = "LKR"; 
+  bool _isLoadingLocation = false;
 
   final List<Map<String, dynamic>> _avatarOptions = [
     {'icon': Icons.person, 'color': Colors.black},
@@ -28,6 +34,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     {'icon': Icons.rocket_launch, 'color': Colors.purple},
     {'icon': Icons.spa, 'color': Colors.green},
   ];
+
+  // UPDATED: Specific currencies you asked for
+  final List<String> _currencies = ["LKR", "USD", "INR", "AUD", "JPY", "EUR", "PKR"];
 
   @override
   void initState() {
@@ -41,11 +50,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _userName = prefs.getString('user_name') ?? "User";
       _avatarIndex = prefs.getInt('user_avatar_index') ?? 0;
-      _profileImagePath = prefs.getString('user_profile_image'); // Load the path
+      _profileImagePath = prefs.getString('user_profile_image');
+      _selectedCurrency = prefs.getString('currency') ?? "LKR"; 
     });
   }
 
-  // --- 2. SAVE DATA ---
+  // --- 2. SAVE PROFILE DATA ---
   Future<void> _saveUserProfile(String name, int avatarIndex, String? imagePath) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_name', name);
@@ -64,14 +74,101 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  // --- 3. PICK IMAGE FUNCTION ---
+  // --- 3. SAVE CURRENCY ---
+  Future<void> _saveCurrency(String currency) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('currency', currency);
+    setState(() {
+      _selectedCurrency = currency;
+    });
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Currency changed to $currency")),
+      );
+    }
+  }
+
+  // --- 4. DETECT LOCATION LOGIC (UPDATED) ---
+  Future<void> _detectCurrencyFromLocation() async {
+    setState(() => _isLoadingLocation = true);
+
+    try {
+      // 1. Check Permissions
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          throw "Location permissions are denied";
+        }
+      }
+      
+      if (permission == LocationPermission.deniedForever) {
+        throw "Location permissions are permanently denied. Please enable them in settings.";
+      }
+
+      // 2. Get GPS Position (With Timeout)
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.low, 
+        timeLimit: const Duration(seconds: 5),
+      );
+
+      // 3. Get Address
+      List<Placemark> placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
+      
+      if (placemarks.isNotEmpty) {
+        final country = placemarks.first.country; 
+        final isoCode = placemarks.first.isoCountryCode; // e.g., "LK", "IN"
+        
+        // --- SPECIFIC MAPPING FOR YOUR REQUIREMENTS ---
+        Map<String, String> countryToCurrency = {
+          "LK": "LKR", // Sri Lanka
+          "US": "USD", // USA
+          "AU": "AUD", // Australia
+          "JP": "JPY", // Japan
+          "IN": "INR", // India
+          "PK": "PKR", // Pakistan
+          
+          // Euro Zone (Mapping major EU countries to EUR)
+          "FR": "EUR", "DE": "EUR", "IT": "EUR", "ES": "EUR", 
+          "NL": "EUR", "BE": "EUR", "AT": "EUR", "IE": "EUR", 
+          "FI": "EUR", "PT": "EUR", "GR": "EUR"
+        };
+
+        // Check the map. If not found, default to USD.
+        String newCurrency = countryToCurrency[isoCode] ?? "USD";
+
+        await _saveCurrency(newCurrency);
+
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text("Location Detected"),
+              content: Text("You are in $country.\nCurrency set to $newCurrency."),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))
+              ],
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        // Show simpler error
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Could not detect location.")));
+      }
+    } finally {
+      setState(() => _isLoadingLocation = false);
+    }
+  }
+
+  // --- IMAGE PICKER ---
   Future<String?> _pickImageFromGallery() async {
     final ImagePicker picker = ImagePicker();
-    // Pick an image
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
     return image?.path;
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -100,15 +197,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               child: Row(
                 children: [
-                  // --- MAIN AVATAR DISPLAY LOGIC ---
                   CircleAvatar(
                     radius: 30,
                     backgroundColor: _profileImagePath != null ? Colors.transparent : currentAvatar['color'],
-                    // If path exists, show file image. Else show nothing here.
                     backgroundImage: _profileImagePath != null 
                         ? FileImage(File(_profileImagePath!)) as ImageProvider
                         : null,
-                    // If path is NULL, show the icon child.
                     child: _profileImagePath == null 
                         ? Icon(currentAvatar['icon'], size: 35, color: Colors.white)
                         : null,
@@ -127,12 +221,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
           ),
-          // ... (Rest of your menu options remain the same) ...
-           const SizedBox(height: 20),
+          
+          const SizedBox(height: 20),
+          
+          // --- CURRENCY SETTINGS SECTION ---
+          const Text("Currency Settings", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
+          const SizedBox(height: 10),
+          
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 5)],
+            ),
+            child: Column(
+              children: [
+                // AUTO MODE ROW
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: Colors.purple.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(Icons.location_on, color: Colors.purple),
+                  ),
+                  title: const Text("Detect from Location", style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: const Text("Automatically set currency based on GPS"),
+                  trailing: _isLoadingLocation 
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                  onTap: _detectCurrencyFromLocation, 
+                ),
+                const Divider(),
+                // MANUAL MODE ROW
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(Icons.attach_money, color: Colors.green),
+                  ),
+                  title: const Text("Currency", style: TextStyle(fontWeight: FontWeight.bold)),
+                  trailing: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _currencies.contains(_selectedCurrency) ? _selectedCurrency : _currencies.first,
+                      items: _currencies.map((String c) {
+                        return DropdownMenuItem<String>(
+                          value: c,
+                          child: Text(c, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        );
+                      }).toList(),
+                      onChanged: (newValue) {
+                        if (newValue != null) _saveCurrency(newValue);
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
           const Text("General", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
           const SizedBox(height: 10),
 
-          // 2. Manage Categories
+          // Manage Categories
           _buildProfileOption(
             context,
             icon: Icons.category,
@@ -146,7 +299,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             },
           ),
           
-          // 3. Manage Accounts
+          // Manage Accounts
           _buildProfileOption(
             context,
             icon: Icons.account_balance_wallet,
@@ -164,7 +317,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const Text("Danger Zone", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red)),
           const SizedBox(height: 10),
 
-          // 4. Clear Data
+          // Clear Data
           Container(
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
             child: ListTile(
@@ -182,22 +335,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showEditProfileDialog() {
     final TextEditingController nameController = TextEditingController(text: _userName);
     int tempIndex = _avatarIndex; 
-    String? tempPath = _profileImagePath; // Temp path for dialog preview
+    String? tempPath = _profileImagePath;
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        // We use 'dialogSetState' here to update the UI *inside* the dialog
         builder: (context, dialogSetState) {
           return AlertDialog(
             title: const Text("Edit Profile"),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // --- PREVIEW AREA ---
                 GestureDetector(
                    onTap: () async {
-                      // Trigger image picker when tapping the big preview circle
                       final path = await _pickImageFromGallery();
                        if (path != null) {
                         dialogSetState(() => tempPath = path);
@@ -231,18 +381,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const Text("Or choose an avatar:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                 const SizedBox(height: 10),
                 
-                // --- ICON GRID ---
                 Wrap(
                   spacing: 15,
                   runSpacing: 15,
                   alignment: WrapAlignment.center,
                   children: List.generate(_avatarOptions.length, (index) {
                     final option = _avatarOptions[index];
-                    // Selected if index matches AND we aren't using a custom photo
                     final isSelected = tempIndex == index && tempPath == null;
                     return GestureDetector(
                       onTap: () {
-                         // If they click an icon, clear the custom photo path
                          dialogSetState(() {
                            tempIndex = index;
                            tempPath = null; 
@@ -258,7 +405,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 20),
                 
-                // Name Input
                 TextField(
                   controller: nameController,
                   decoration: const InputDecoration(
@@ -273,7 +419,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ElevatedButton(
                 onPressed: () {
                   final newName = nameController.text.isEmpty ? "User" : nameController.text;
-                  // SAVE all data including the new path (or null path)
                   _saveUserProfile(newName, tempIndex, tempPath);
                   Navigator.pop(context);
                 },
@@ -336,4 +481,4 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
-} 
+}
