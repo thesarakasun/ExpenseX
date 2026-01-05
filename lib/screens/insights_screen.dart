@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart'; // <-- NEW: Needed for DateFormat
 import '../models/transaction.dart';
 import '../services/database_service.dart';
 
@@ -14,6 +16,30 @@ class InsightsScreen extends StatefulWidget {
 
 class _InsightsScreenState extends State<InsightsScreen> {
   int _touchedIndex = -1; // For Pie Chart interaction
+  String _currency = "LKR"; 
+  
+  // 1. NEW: Month Selection State
+  DateTime _selectedMonth = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrency();
+  }
+
+  Future<void> _loadCurrency() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currency = prefs.getString('currency') ?? "LKR";
+    });
+  }
+
+  // 2. NEW: Helper to change months
+  void _changeMonth(int monthsToAdd) {
+    setState(() {
+      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + monthsToAdd, 1);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,23 +56,21 @@ class _InsightsScreenState extends State<InsightsScreen> {
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
           
-          final transactions = snapshot.data!;
-          if (transactions.isEmpty) {
-             return const Center(child: Text("No data to analyze yet."));
-          }
+          final allTransactions = snapshot.data!;
 
-          // --- DATA PROCESSING ---
-          final now = DateTime.now();
-          final thisMonthTx = transactions.where((tx) {
-            return tx.date.month == now.month && tx.date.year == now.year;
+          // --- 3. FILTER BY SELECTED MONTH ---
+          final transactions = allTransactions.where((tx) {
+            return tx.date.month == _selectedMonth.month && 
+                   tx.date.year == _selectedMonth.year;
           }).toList();
 
+          // --- DATA PROCESSING ---
           double totalIncome = 0;
           double totalExpense = 0;
           final Map<String, double> categoryTotals = {};
           final Map<int, double> dailySpending = {};
 
-          for (var tx in thisMonthTx) {
+          for (var tx in transactions) {
             if (tx.type == 0) {
               totalIncome += tx.amount;
             } else if (tx.type == 1) {
@@ -72,158 +96,203 @@ class _InsightsScreenState extends State<InsightsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 
-                // 1. STAT CARDS ROW
-                Row(
-                  children: [
-                    Expanded(child: _buildStatCard("Income", totalIncome, Colors.green, Icons.arrow_downward)),
-                    const SizedBox(width: 12),
-                    Expanded(child: _buildStatCard("Expense", totalExpense, Colors.red, Icons.arrow_upward)),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _buildStatCard("Net Savings", totalIncome - totalExpense, (totalIncome - totalExpense) >= 0 ? Colors.blue : Colors.orange, Icons.account_balance_wallet),
-
-                const SizedBox(height: 30),
-
-                // 2. BAR CHART (Monthly Overview)
-                const Text("Monthly Overview", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 15),
-                Container(
-                  height: 200,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-                  child: BarChart(
-                    BarChartData(
-                      gridData: FlGridData(show: false),
-                      titlesData: FlTitlesData(
-                        leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        bottomTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            getTitlesWidget: (value, meta) {
-                              if (value == 0) return const Text("Income", style: TextStyle(fontWeight: FontWeight.bold));
-                              if (value == 1) return const Text("Expense", style: TextStyle(fontWeight: FontWeight.bold));
-                              return const Text("");
-                            },
-                          ),
+                // --- 4. NEW: MONTH SELECTOR UI ---
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 20),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        InkWell(
+                          onTap: () => _changeMonth(-1),
+                          child: const Icon(Icons.chevron_left, size: 24),
                         ),
-                      ),
-                      borderData: FlBorderData(show: false),
-                      barGroups: [
-                        BarChartGroupData(x: 0, barRods: [
-                          BarChartRodData(toY: totalIncome, color: Colors.green, width: 30, borderRadius: BorderRadius.circular(6))
-                        ]),
-                        BarChartGroupData(x: 1, barRods: [
-                          BarChartRodData(toY: totalExpense, color: Colors.red, width: 30, borderRadius: BorderRadius.circular(6))
-                        ]),
+                        const SizedBox(width: 15),
+                        Text(
+                          DateFormat('MMMM yyyy').format(_selectedMonth),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(width: 15),
+                        InkWell(
+                          onTap: () => _changeMonth(1),
+                          child: const Icon(Icons.chevron_right, size: 24),
+                        ),
                       ],
                     ),
                   ),
                 ),
 
-                const SizedBox(height: 30),
+                // CHECK IF EMPTY *AFTER* FILTERING
+                if (transactions.isEmpty) 
+                   Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 50),
+                      child: Text(
+                        "No data for ${DateFormat('MMMM').format(_selectedMonth)}", 
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  )
+                else ...[
+                  // 1. STAT CARDS ROW
+                  Row(
+                    children: [
+                      Expanded(child: _buildStatCard("Income", totalIncome, Colors.green, Icons.arrow_downward)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _buildStatCard("Expense", totalExpense, Colors.red, Icons.arrow_upward)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildStatCard("Net Savings", totalIncome - totalExpense, (totalIncome - totalExpense) >= 0 ? Colors.blue : Colors.orange, Icons.account_balance_wallet),
 
-                // 3. LINE CHART (Daily Spending Trend)
-                const Text("Daily Spending Trend", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 5),
-                const Text("See which days you spent the most", style: TextStyle(color: Colors.grey, fontSize: 12)),
-                const SizedBox(height: 20),
-                
-                Container(
-                  height: 250,
-                  padding: const EdgeInsets.only(right: 16, top: 10, bottom: 10),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-                  child: spots.isEmpty 
-                    ? const Center(child: Text("No spending data this month"))
-                    : LineChart(
-                      LineChartData(
+                  const SizedBox(height: 30),
+
+                  // 2. BAR CHART
+                  const Text("Monthly Overview", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 15),
+                  Container(
+                    height: 200,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                    child: BarChart(
+                      BarChartData(
                         gridData: FlGridData(show: false),
                         titlesData: FlTitlesData(
+                          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                           rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                           topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                           bottomTitles: AxisTitles(
                             sideTitles: SideTitles(
                               showTitles: true,
-                              interval: 5, 
                               getTitlesWidget: (value, meta) {
-                                return Text(value.toInt().toString(), style: const TextStyle(color: Colors.grey, fontSize: 12));
+                                if (value == 0) return const Text("Income", style: TextStyle(fontWeight: FontWeight.bold));
+                                if (value == 1) return const Text("Expense", style: TextStyle(fontWeight: FontWeight.bold));
+                                return const Text("");
                               },
                             ),
                           ),
-                          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                         ),
                         borderData: FlBorderData(show: false),
-                        lineBarsData: [
-                          LineChartBarData(
-                            spots: spots,
-                            isCurved: true,
-                            color: Colors.blueAccent,
-                            barWidth: 4,
-                            isStrokeCapRound: true,
-                            dotData: FlDotData(show: true),
-                            belowBarData: BarAreaData(
-                              show: true,
-                              color: Colors.blueAccent.withOpacity(0.2),
+                        barGroups: [
+                          BarChartGroupData(x: 0, barRods: [
+                            BarChartRodData(toY: totalIncome, color: Colors.green, width: 30, borderRadius: BorderRadius.circular(6))
+                          ]),
+                          BarChartGroupData(x: 1, barRods: [
+                            BarChartRodData(toY: totalExpense, color: Colors.red, width: 30, borderRadius: BorderRadius.circular(6))
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 30),
+
+                  // 3. LINE CHART
+                  const Text("Daily Spending Trend", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 5),
+                  const Text("See which days you spent the most", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  const SizedBox(height: 20),
+                  
+                  Container(
+                    height: 250,
+                    padding: const EdgeInsets.only(right: 16, top: 10, bottom: 10),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                    child: spots.isEmpty 
+                      ? const Center(child: Text("No spending data this month"))
+                      : LineChart(
+                        LineChartData(
+                          gridData: FlGridData(show: false),
+                          titlesData: FlTitlesData(
+                            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                interval: 5, 
+                                getTitlesWidget: (value, meta) {
+                                  return Text(value.toInt().toString(), style: const TextStyle(color: Colors.grey, fontSize: 12));
+                                },
+                              ),
+                            ),
+                            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          ),
+                          borderData: FlBorderData(show: false),
+                          lineBarsData: [
+                            LineChartBarData(
+                              spots: spots,
+                              isCurved: true,
+                              color: Colors.blueAccent,
+                              barWidth: 4,
+                              isStrokeCapRound: true,
+                              dotData: FlDotData(show: true),
+                              belowBarData: BarAreaData(
+                                show: true,
+                                color: Colors.blueAccent.withOpacity(0.2),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ),
+
+                  const SizedBox(height: 30),
+
+                  // 4. PIE CHART
+                  if (totalExpense > 0) ...[
+                    const Text("Where is your money going?", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 15),
+                    Container(
+                      height: 350,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            height: 200,
+                            child: PieChart(
+                              PieChartData(
+                                pieTouchData: PieTouchData(
+                                  touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                                    setState(() {
+                                      if (!event.isInterestedForInteractions ||
+                                          pieTouchResponse == null ||
+                                          pieTouchResponse.touchedSection == null) {
+                                        _touchedIndex = -1;
+                                        return;
+                                      }
+                                      _touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                                    });
+                                  },
+                                ),
+                                borderData: FlBorderData(show: false),
+                                sectionsSpace: 2,
+                                centerSpaceRadius: 40,
+                                sections: _generatePieSections(categoryTotals, totalExpense),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                children: categoryTotals.entries.map((entry) {
+                                  return _buildLegendItem(entry.key, entry.value, totalExpense);
+                                }).toList(),
+                              ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                ),
-
-                const SizedBox(height: 30),
-
-                // 4. PIE CHART (Expense Breakdown)
-                if (totalExpense > 0) ...[
-                  const Text("Where is your money going?", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 15),
-                  Container(
-                    height: 350,
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-                    child: Column(
-                      children: [
-                        SizedBox(
-                          height: 200,
-                          child: PieChart(
-                            PieChartData(
-                              pieTouchData: PieTouchData(
-                                touchCallback: (FlTouchEvent event, pieTouchResponse) {
-                                  setState(() {
-                                    if (!event.isInterestedForInteractions ||
-                                        pieTouchResponse == null ||
-                                        pieTouchResponse.touchedSection == null) {
-                                      _touchedIndex = -1;
-                                      return;
-                                    }
-                                    _touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
-                                  });
-                                },
-                              ),
-                              borderData: FlBorderData(show: false),
-                              sectionsSpace: 2,
-                              centerSpaceRadius: 40,
-                              sections: _generatePieSections(categoryTotals, totalExpense),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: Column(
-                              children: categoryTotals.entries.map((entry) {
-                                return _buildLegendItem(entry.key, entry.value, totalExpense);
-                              }).toList(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ] else 
-                   const Center(child: Text("No expenses recorded this month", style: TextStyle(color: Colors.grey))),
+                  ] else 
+                     const Center(child: Text("No expenses recorded this month", style: TextStyle(color: Colors.grey))),
+                ],
                 
                 const SizedBox(height: 30),
               ],
@@ -256,7 +325,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            "LKR ${amount.toStringAsFixed(0)}",
+            "$_currency ${amount.toStringAsFixed(0)}", 
             style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold),
           ),
         ],
@@ -296,7 +365,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
           const SizedBox(width: 10),
           Text(category, style: const TextStyle(fontSize: 14)),
           const Spacer(),
-          Text("LKR ${amount.toStringAsFixed(0)}", style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text("$_currency ${amount.toStringAsFixed(0)}", style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
