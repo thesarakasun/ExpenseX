@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; // Needed for Date Formatting
+import 'package:shared_preferences/shared_preferences.dart'; // <-- NEW: Import this
 import '../models/account.dart';
 import '../models/transaction.dart';
 import '../services/database_service.dart';
@@ -14,8 +15,23 @@ class Dashboard extends StatefulWidget {
 }
 
 class _DashboardState extends State<Dashboard> {
-  // 1. STATE VARIABLE: Holds the currently selected month
+  // 1. STATE VARIABLES
   DateTime _selectedMonth = DateTime.now();
+  String _currency = "LKR"; // <-- NEW: Default currency
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrency(); // <-- NEW: Load currency on start
+  }
+
+  // --- NEW: Load Currency Function ---
+  Future<void> _loadCurrency() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currency = prefs.getString('currency') ?? "LKR";
+    });
+  }
 
   // Helper to change months
   void _changeMonth(int monthsToAdd) {
@@ -79,7 +95,7 @@ class _DashboardState extends State<Dashboard> {
                   const SizedBox(height: 20),
 
                   // --- SECTION C: RECENT TRANSACTIONS HEADER & FILTER ---
-                  // 2. NEW MONTH SELECTOR UI
+                  // 2. MONTH SELECTOR UI
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -146,7 +162,7 @@ class _DashboardState extends State<Dashboard> {
                       }
                       
                       return Column(
-                        children: transactions.map((tx) { // Removed .take(10) so you see all for the month
+                        children: transactions.map((tx) {
                           // 1. Color & Icon Logic
                           Color color = tx.type == 0 ? Colors.green : (tx.type == 1 ? Colors.red : Colors.blue);
                           String sign = tx.type == 0 ? "+" : (tx.type == 1 ? "-" : "");
@@ -164,7 +180,7 @@ class _DashboardState extends State<Dashboard> {
                           return _buildTransactionItem(
                             tx.categoryName ?? "Transfer", 
                             "$accountInfo  •  $formattedDate", 
-                            "$sign LKR ${tx.amount.toStringAsFixed(0)}", 
+                            "$sign $_currency ${tx.amount.toStringAsFixed(0)}", // <-- UPDATED: Uses _currency
                             color,
                             icon
                           );
@@ -202,7 +218,7 @@ class _DashboardState extends State<Dashboard> {
           const Text("Total Balance", style: TextStyle(color: Colors.white70, fontSize: 16)),
           const SizedBox(height: 5),
           Text(
-            "LKR ${amount.toStringAsFixed(2)}",
+            "$_currency ${amount.toStringAsFixed(2)}", // <-- UPDATED: Uses _currency
             style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
           ),
         ],
@@ -228,7 +244,7 @@ class _DashboardState extends State<Dashboard> {
           const Spacer(),
           Text(name, style: const TextStyle(color: Colors.grey)),
           const SizedBox(height: 4),
-          Text("LKR ${balance.toStringAsFixed(0)}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          Text("$_currency ${balance.toStringAsFixed(0)}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), // <-- UPDATED: Uses _currency
         ],
       ),
     );
