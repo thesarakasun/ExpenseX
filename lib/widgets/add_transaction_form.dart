@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // <-- NEW
 import '../models/category.dart';
 import '../models/account.dart';
 import '../services/database_service.dart';
@@ -16,15 +17,28 @@ class AddTransactionForm extends StatefulWidget {
 class _AddTransactionFormState extends State<AddTransactionForm> {
   // 0=Income, 1=Expense, 2=Transfer
   int _typeIndex = 1; 
+  String _currency = "LKR"; // <-- NEW: Default
 
   final TextEditingController _amountController = TextEditingController();
 
-  // We no longer need hardcoded lists here. We will get them from the stream.
-  
   String? _selectedCategory;
   String? _selectedAccount;
   String? _selectedFromAccount;
   String? _selectedToAccount;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrency(); // <-- NEW: Load on start
+  }
+
+  // --- NEW: Load Saved Currency ---
+  Future<void> _loadCurrency() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currency = prefs.getString('currency') ?? "LKR";
+    });
+  }
 
   @override
   void dispose() {
@@ -34,17 +48,14 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
 
   @override
   Widget build(BuildContext context) {
-    // 1. STREAM: Get Real Categories
     return StreamBuilder<List<Category>>(
       stream: widget.databaseService.streamCategories(),
       builder: (context, catSnapshot) {
         
-        // 2. STREAM: Get Real Accounts
         return StreamBuilder<List<Account>>(
           stream: widget.databaseService.streamAccounts(),
           builder: (context, accSnapshot) {
             
-            // Loading State
             if (!catSnapshot.hasData || !accSnapshot.hasData) {
               return const Padding(
                 padding: EdgeInsets.all(20),
@@ -56,22 +67,21 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
             final accounts = accSnapshot.data!;
 
             // DATA PROCESSING
-            // Filter Categories based on Type
             final incomeCats = categories.where((c) => !c.isExpense).map((c) => c.name).toList();
             final expenseCats = categories.where((c) => c.isExpense).map((c) => c.name).toList();
             final accountNames = accounts.map((a) => a.name).toList();
 
-            // Setup Defaults if selection is null (First load)
+            // Setup Defaults
             if (_selectedAccount == null && accountNames.isNotEmpty) _selectedAccount = accountNames.first;
             if (_selectedFromAccount == null && accountNames.isNotEmpty) _selectedFromAccount = accountNames.first;
             if (_selectedToAccount == null && accountNames.isNotEmpty) {
                _selectedToAccount = accountNames.length > 1 ? accountNames[1] : accountNames.first;
             }
 
-            // Decide which list of categories to show
+            // Decide which list to show
             List<String> currentCatList = _typeIndex == 0 ? incomeCats : expenseCats;
             
-            // Ensure selected category is valid
+            // Valid category check
             if ((_selectedCategory == null || !currentCatList.contains(_selectedCategory)) && currentCatList.isNotEmpty) {
               _selectedCategory = currentCatList.first;
             }
@@ -117,7 +127,7 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: InputDecoration(
-                      hintText: "LKR 0",
+                      hintText: "$_currency 0", // <-- UPDATED: Shows "USD 0" etc.
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       prefixIcon: const Icon(Icons.attach_money),
                     ),
@@ -193,7 +203,7 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
                   // --- SAVE BUTTON ---
                   ElevatedButton(
                     onPressed: () async {
-                      if (accountNames.isEmpty) return; // Guard clause
+                      if (accountNames.isEmpty) return; 
 
                       final double? amount = double.tryParse(_amountController.text);
 
@@ -217,8 +227,9 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
                               builder: (context) => AlertDialog(
                                 title: const Text("Insufficient Funds", style: TextStyle(color: Colors.red)),
                                 content: Text(
-                                  "You cannot spend LKR ${amount.toStringAsFixed(0)}.\n\n"
-                                  "$accountToCheck only has LKR ${currentBalance.toStringAsFixed(0)} available.",
+                                  // UPDATED: Use _currency here
+                                  "You cannot spend $_currency ${amount.toStringAsFixed(0)}.\n\n"
+                                  "$accountToCheck only has $_currency ${currentBalance.toStringAsFixed(0)} available.",
                                 ),
                                 actions: [
                                   TextButton(
@@ -297,12 +308,11 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
   }
 
   Widget _buildDropdown(List<String> items, String selectedValue, Function(String?) onChanged) {
-    // Safety check: ensure the selected value is actually in the list
     String displayValue = selectedValue;
     if (!items.contains(selectedValue) && items.isNotEmpty) {
       displayValue = items.first;
     } else if (items.isEmpty) {
-      return const Text("No options available"); // Fallback
+      return const Text("No options available"); 
     }
 
     return Container(
