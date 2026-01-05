@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-//import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // <-- NEW
 import '../models/category.dart';
 import '../models/transaction.dart';
 import '../services/database_service.dart';
@@ -15,6 +15,21 @@ class BudgetScreen extends StatefulWidget {
 }
 
 class _BudgetScreenState extends State<BudgetScreen> {
+  String _currency = "LKR"; // <-- NEW: Default
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrency(); // <-- NEW: Load on start
+  }
+
+  Future<void> _loadCurrency() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currency = prefs.getString('currency') ?? "LKR";
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -148,7 +163,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
                 
                 // Text Amount (Spent / Limit)
                 Text(
-                  "LKR ${spent.toStringAsFixed(0)} / ${budget.toStringAsFixed(0)}",
+                  "$_currency ${spent.toStringAsFixed(0)} / ${budget.toStringAsFixed(0)}", // <-- UPDATED
                   style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(width: 10),
@@ -243,10 +258,10 @@ class _BudgetScreenState extends State<BudgetScreen> {
                   controller: amountController,
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration( // <-- UPDATED: Removed const to allow $_currency
                     labelText: "Monthly Limit",
-                    prefixText: "LKR ",
-                    border: OutlineInputBorder(),
+                    prefixText: "$_currency ", 
+                    border: const OutlineInputBorder(),
                   ),
                 ),
               ],
@@ -283,10 +298,10 @@ class _BudgetScreenState extends State<BudgetScreen> {
           controller: controller,
           keyboardType: TextInputType.number,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          decoration: const InputDecoration(
+          decoration: InputDecoration( // <-- UPDATED: Removed const to allow $_currency
             labelText: "New Limit (0 to remove)",
-            prefixText: "LKR ",
-            border: OutlineInputBorder(),
+            prefixText: "$_currency ",
+            border: const OutlineInputBorder(),
           ),
         ),
         actions: [
