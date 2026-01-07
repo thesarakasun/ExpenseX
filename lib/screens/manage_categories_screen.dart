@@ -38,7 +38,6 @@ class ManageCategoriesScreen extends StatelessWidget {
           backgroundColor: Colors.black,
           child: const Icon(Icons.add, color: Colors.white),
           onPressed: () {
-            // Default to Expense tab logic, but user can switch in dialog
             _showCategoryDialog(context, databaseService, null);
           },
         ),
@@ -115,7 +114,7 @@ class _CategoryList extends StatelessWidget {
           TextButton(
             onPressed: () async {
               await db.deleteCategory(id);
-              Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             },
             child: const Text("Delete", style: TextStyle(color: Colors.red)),
           ),
@@ -130,7 +129,6 @@ void _showCategoryDialog(BuildContext context, DatabaseService db, Category? cat
   final nameController = TextEditingController(text: category?.name ?? "");
   bool isExpense = category?.isExpense ?? true;
   
-  // Simple Color Picker Logic (Hardcoded options for now)
   List<Color> colors = [Colors.red, Colors.blue, Colors.green, Colors.orange, Colors.purple];
   Color selectedColor = category != null ? Color(category.colorValue) : colors[0];
 
@@ -189,16 +187,18 @@ void _showCategoryDialog(BuildContext context, DatabaseService db, Category? cat
               onPressed: () async {
                 if (nameController.text.isEmpty) return;
 
-                final newCategory = Category()
-                  ..id = category?.id ?? DateTime.now().millisecondsSinceEpoch // Unique ID logic
-                  ..name = nameController.text
-                  ..isExpense = isExpense
-                  ..colorValue = selectedColor.value
-                  ..iconName = "circle" // Default icon for custom ones
-                  ..budget = category?.budget ?? 0.0; // Keep old budget if editing
+                // FIX: Use named constructor instead of cascade operator
+                final newCategory = Category(
+                  id: category?.id ?? DateTime.now().millisecondsSinceEpoch,
+                  name: nameController.text,
+                  iconName: "circle",
+                  colorValue: selectedColor.value,
+                  isExpense: isExpense,
+                  budget: category?.budget ?? 0.0,
+                );
 
                 await db.saveCategory(newCategory);
-                Navigator.pop(context);
+                if (context.mounted) Navigator.pop(context);
               },
               style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white),
               child: const Text("Save"),

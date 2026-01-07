@@ -1,28 +1,47 @@
-import 'package:isar/isar.dart';
-
-part 'transaction.g.dart';
-
-@Collection()
 class Transaction {
-  Id id = Isar.autoIncrement;
+  int id;
+  double amount;
+  String note;
+  DateTime date;
+  int type; // 0=Income, 1=Expense, 2=Transfer
+  String accountName;
+  String? categoryName;
+  String? destinationAccountName; // For transfers
 
-  late double amount;
+  Transaction({
+    required this.id,
+    required this.amount,
+    required this.note,
+    required this.date,
+    required this.type,
+    required this.accountName,
+    this.categoryName,
+    this.destinationAccountName,
+  });
 
-  late DateTime date; // Date & Time of transaction
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'amount': amount,
+      'note': note,
+      'date': date.millisecondsSinceEpoch, // Store date as timestamp
+      'type': type,
+      'accountName': accountName,
+      'categoryName': categoryName,
+      'destinationAccountName': destinationAccountName,
+    };
+  }
 
-  late String note;
-
-  // 0=Income, 1=Expense, 2=Transfer
-  late int type; 
-
-  // --- Relationships (Linking tables) ---
-  
-  // Which Category? (e.g., Food) - Nullable because Transfers don't have categories
-  late String? categoryName; 
-  
-  // Which Account? (e.g., HNB)
-  late String accountName; 
-
-  // If Transfer, where did it go?
-  late String? destinationAccountName; 
-} 
+  factory Transaction.fromMap(Map<String, dynamic> map) {
+    return Transaction(
+      id: map['id'],
+      amount: map['amount'],
+      note: map['note'],
+      date: DateTime.fromMillisecondsSinceEpoch(map['date']),
+      type: map['type'],
+      accountName: map['accountName'],
+      categoryName: map['categoryName'],
+      destinationAccountName: map['destinationAccountName'],
+    );
+  }
+}

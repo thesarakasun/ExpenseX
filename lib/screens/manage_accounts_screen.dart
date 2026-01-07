@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Needed for number input
-import 'package:shared_preferences/shared_preferences.dart'; // <-- NEW
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/account.dart';
 import '../services/database_service.dart';
 
@@ -14,15 +14,14 @@ class ManageAccountsScreen extends StatefulWidget {
 }
 
 class _ManageAccountsScreenState extends State<ManageAccountsScreen> {
-  String _currency = "LKR"; // <-- NEW: Default Currency
+  String _currency = "LKR";
 
   @override
   void initState() {
     super.initState();
-    _loadCurrency(); // <-- NEW: Load on start
+    _loadCurrency();
   }
 
-  // --- NEW: Load Saved Currency ---
   Future<void> _loadCurrency() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -65,7 +64,6 @@ class _ManageAccountsScreenState extends State<ManageAccountsScreen> {
                     child: Icon(Icons.account_balance_wallet, color: _getAccountColor(account.name)),
                   ),
                   title: Text(account.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  // UPDATED: Use _currency variable
                   subtitle: Text("$_currency ${account.balance.toStringAsFixed(0)}"),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -93,8 +91,6 @@ class _ManageAccountsScreenState extends State<ManageAccountsScreen> {
       ),
     );
   }
-
-  // --- HELPERS ---
 
   void _deleteAccount(BuildContext context, DatabaseService db, int id) {
     showDialog(
@@ -152,7 +148,7 @@ class _ManageAccountsScreenState extends State<ManageAccountsScreen> {
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: InputDecoration(
                 labelText: "Current Balance", 
-                prefixText: "$_currency ", // <-- UPDATED: Use dynamic currency
+                prefixText: "$_currency ", 
                 border: const OutlineInputBorder()
               ),
             ),
@@ -166,12 +162,14 @@ class _ManageAccountsScreenState extends State<ManageAccountsScreen> {
 
               final double balance = double.tryParse(balanceController.text) ?? 0.0;
 
-              final newAccount = Account()
-                ..id = account?.id ?? DateTime.now().millisecondsSinceEpoch
-                ..name = nameController.text
-                ..balance = balance
-                ..type = account?.type ?? "Cash" 
-                ..currency = _currency; // <-- UPDATED: Save dynamic currency
+              // FIX: Use named constructor instead of cascade operator
+              final newAccount = Account(
+                id: account?.id ?? DateTime.now().millisecondsSinceEpoch,
+                name: nameController.text,
+                balance: balance,
+                type: account?.type ?? "Cash",
+                currency: _currency,
+              );
 
               await db.saveAccount(newAccount);
               if (context.mounted) Navigator.pop(context);

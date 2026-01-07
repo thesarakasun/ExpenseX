@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // <-- NEW
+import 'package:shared_preferences/shared_preferences.dart'; 
 import '../models/category.dart';
 import '../models/account.dart';
 import '../services/database_service.dart';
@@ -17,7 +17,7 @@ class AddTransactionForm extends StatefulWidget {
 class _AddTransactionFormState extends State<AddTransactionForm> {
   // 0=Income, 1=Expense, 2=Transfer
   int _typeIndex = 1; 
-  String _currency = "LKR"; // <-- NEW: Default
+  String _currency = "LKR"; 
 
   final TextEditingController _amountController = TextEditingController();
 
@@ -29,7 +29,7 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
   @override
   void initState() {
     super.initState();
-    _loadCurrency(); // <-- NEW: Load on start
+    _loadCurrency(); 
   }
 
   // --- NEW: Load Saved Currency ---
@@ -127,9 +127,9 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: InputDecoration(
-                      hintText: "$_currency 0", // <-- UPDATED: Shows "USD 0" etc.
+                      hintText: "$_currency 0", 
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      prefixIcon: const Icon(Icons.attach_money),
+                      // REMOVED: prefixIcon: const Icon(Icons.attach_money),
                     ),
                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
@@ -227,7 +227,6 @@ class _AddTransactionFormState extends State<AddTransactionForm> {
                               builder: (context) => AlertDialog(
                                 title: const Text("Insufficient Funds", style: TextStyle(color: Colors.red)),
                                 content: Text(
-                                  // UPDATED: Use _currency here
                                   "You cannot spend $_currency ${amount.toStringAsFixed(0)}.\n\n"
                                   "$accountToCheck only has $_currency ${currentBalance.toStringAsFixed(0)} available.",
                                 ),

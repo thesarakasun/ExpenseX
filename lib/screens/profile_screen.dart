@@ -35,7 +35,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     {'icon': Icons.spa, 'color': Colors.green},
   ];
 
-  // UPDATED: Specific currencies you asked for
   final List<String> _currencies = ["LKR", "USD", "INR", "AUD", "JPY", "EUR", "PKR"];
 
   @override
@@ -47,6 +46,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // --- 1. LOAD DATA ---
   Future<void> _loadUserProfile() async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // FIX: Check if screen is still alive before updating UI
+    if (!mounted) return;
+
     setState(() {
       _userName = prefs.getString('user_name') ?? "User";
       _avatarIndex = prefs.getInt('user_avatar_index') ?? 0;
@@ -67,34 +70,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await prefs.remove('user_profile_image'); 
     }
     
-    setState(() {
-      _userName = name;
-      _avatarIndex = avatarIndex;
-      _profileImagePath = imagePath;
-    });
+    if (mounted) {
+      setState(() {
+        _userName = name;
+        _avatarIndex = avatarIndex;
+        _profileImagePath = imagePath;
+      });
+    }
   }
 
   // --- 3. SAVE CURRENCY ---
   Future<void> _saveCurrency(String currency) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('currency', currency);
-    setState(() {
-      _selectedCurrency = currency;
-    });
     
     if (mounted) {
+      setState(() {
+        _selectedCurrency = currency;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Currency changed to $currency")),
       );
     }
   }
 
-  // --- 4. DETECT LOCATION LOGIC (UPDATED) ---
+  // --- 4. DETECT LOCATION LOGIC (FIXED) ---
   Future<void> _detectCurrencyFromLocation() async {
     setState(() => _isLoadingLocation = true);
 
     try {
-      // 1. Check Permissions
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -104,66 +108,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
       
       if (permission == LocationPermission.deniedForever) {
-        throw "Location permissions are permanently denied. Please enable them in settings.";
+        throw "Location permissions are permanently denied.";
       }
 
-      // 2. Get GPS Position (With Timeout)
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.low, 
         timeLimit: const Duration(seconds: 5),
       );
 
-      // 3. Get Address
       List<Placemark> placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
       
       if (placemarks.isNotEmpty) {
         final country = placemarks.first.country; 
-        final isoCode = placemarks.first.isoCountryCode; // e.g., "LK", "IN"
+        final isoCode = placemarks.first.isoCountryCode; 
         
-        // --- SPECIFIC MAPPING FOR YOUR REQUIREMENTS ---
         Map<String, String> countryToCurrency = {
-          "LK": "LKR", // Sri Lanka
-          "US": "USD", // USA
-          "AU": "AUD", // Australia
-          "JP": "JPY", // Japan
-          "IN": "INR", // India
-          "PK": "PKR", // Pakistan
-          
-          // Euro Zone (Mapping major EU countries to EUR)
+          "LK": "LKR", "US": "USD", "AU": "AUD", "JP": "JPY", 
+          "IN": "INR", "PK": "PKR", 
           "FR": "EUR", "DE": "EUR", "IT": "EUR", "ES": "EUR", 
-          "NL": "EUR", "BE": "EUR", "AT": "EUR", "IE": "EUR", 
-          "FI": "EUR", "PT": "EUR", "GR": "EUR"
+          "NL": "EUR", "BE": "EUR", "AT": "EUR", "IE": "EUR"
         };
 
-        // Check the map. If not found, default to USD.
         String newCurrency = countryToCurrency[isoCode] ?? "USD";
 
-        await _saveCurrency(newCurrency);
-
         if (mounted) {
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text("Location Detected"),
-              content: Text("You are in $country.\nCurrency set to $newCurrency."),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))
-              ],
-            ),
-          );
+          await _saveCurrency(newCurrency);
+          if (mounted) {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text("Location Detected"),
+                content: Text("You are in $country.\nCurrency set to $newCurrency."),
+                actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
+              ),
+            );
+          }
         }
       }
     } catch (e) {
       if (mounted) {
-        // Show simpler error
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Could not detect location.")));
       }
     } finally {
-      setState(() => _isLoadingLocation = false);
+      // FIX: Check mounted before stopping the loader
+      if (mounted) {
+        setState(() => _isLoadingLocation = false);
+      }
     }
   }
 
-  // --- IMAGE PICKER ---
   Future<String?> _pickImageFromGallery() async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
@@ -172,7 +165,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currentAvatar = _avatarOptions[_avatarIndex];
+    // Safety check for index out of bounds
+    int safeIndex = (_avatarIndex >= 0 && _avatarIndex < _avatarOptions.length) ? _avatarIndex : 0;
+    final currentAvatar = _avatarOptions[safeIndex];
 
     return Scaffold(
       appBar: AppBar(

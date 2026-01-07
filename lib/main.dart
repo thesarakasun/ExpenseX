@@ -8,7 +8,7 @@ void main() async {
 
   // 2. Initialize Database
   final databaseService = DatabaseService();
-  await databaseService.initialize();
+  await databaseService.initDatabase();
 
   // 3. Run App (Injecting the database service)
   runApp(ExpenseXApp(databaseService: databaseService));

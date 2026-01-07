@@ -1,170 +1,230 @@
-import 'package:isar/isar.dart';
-import 'package:path_provider/path_provider.dart';
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart';
 import '../models/account.dart';
 import '../models/category.dart';
-import '../models/transaction.dart';
+import '../models/transaction.dart' as model; 
 
 class DatabaseService {
-  late Isar isar;
+  static Database? _database;
+  
+  final _accountStreamController = StreamController<List<Account>>.broadcast();
+  final _categoryStreamController = StreamController<List<Category>>.broadcast();
+  final _transactionStreamController = StreamController<List<model.Transaction>>.broadcast();
 
-  // --- 1. INITIALIZE DATABASE ---
-  Future<void> initialize() async {
-    final dir = await getApplicationDocumentsDirectory();
-    
-    isar = await Isar.open(
-      [AccountSchema, CategorySchema, TransactionSchema],
-      directory: dir.path,
+  Future<void> initDatabase() async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, 'expensex.db');
+
+    _database = await openDatabase(
+      path,
+      version: 1,
+      onCreate: (db, version) async {
+        // 1. Create Accounts Table
+        await db.execute('''
+          CREATE TABLE accounts(
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            balance REAL,
+            type TEXT,
+            currency TEXT
+          )
+        ''');
+
+        // 2. Create Categories Table
+        await db.execute('''
+          CREATE TABLE categories(
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            iconName TEXT,
+            colorValue INTEGER,
+            isExpense INTEGER,
+            budget REAL
+          )
+        ''');
+
+        // 3. Create Transactions Table
+        await db.execute('''
+          CREATE TABLE transactions(
+            id INTEGER PRIMARY KEY,
+            amount REAL,
+            note TEXT,
+            date INTEGER,
+            type INTEGER,
+            accountName TEXT,
+            categoryName TEXT,
+            destinationAccountName TEXT
+          )
+        ''');
+
+        // 4. Insert Defaults
+        await _insertDefaultCategories(db);
+        await _insertDefaultAccounts(db); // <--- NEW: Auto-create accounts
+      },
     );
-
-    // Check if we need to add default data (First run only)
-    if (await isar.accounts.count() == 0) {
-      await _seedDefaultData();
-    }
-  }
-
-  // --- 2. SAVE TRANSACTION LOGIC ---
-  Future<void> saveTransaction({
-    required double amount,
-    required String note,
-    required int type, // 0=Income, 1=Expense, 2=Transfer
-    required String accountName,
-    String? categoryName,
-    String? destinationAccountName, // Only for transfers
-  }) async {
     
-    final newTransaction = Transaction()
-      ..amount = amount
-      ..date = DateTime.now()
-      ..note = note
-      ..type = type
-      ..categoryName = categoryName
-      ..accountName = accountName
-      ..destinationAccountName = destinationAccountName;
-
-    // Use a "Write Transaction" to ensure data safety
-    await isar.writeTxn(() async {
-      // 1. Save the Transaction Record
-      await isar.transactions.put(newTransaction);
-
-      // 2. Update Account Balances
-      if (type == 0) {
-        // Income: Increase Balance
-        final account = await isar.accounts.filter().nameEqualTo(accountName).findFirst();
-        if (account != null) {
-          account.balance += amount;
-          await isar.accounts.put(account);
-        }
-      } else if (type == 1) {
-        // Expense: Decrease Balance
-        final account = await isar.accounts.filter().nameEqualTo(accountName).findFirst();
-        if (account != null) {
-          account.balance -= amount;
-          await isar.accounts.put(account);
-        }
-      } else if (type == 2 && destinationAccountName != null) {
-        // Transfer: Decrease From, Increase To
-        final fromAccount = await isar.accounts.filter().nameEqualTo(accountName).findFirst();
-        final toAccount = await isar.accounts.filter().nameEqualTo(destinationAccountName).findFirst();
-        
-        if (fromAccount != null && toAccount != null) {
-          fromAccount.balance -= amount;
-          toAccount.balance += amount;
-          await isar.accounts.putAll([fromAccount, toAccount]);
-        }
-      }
-    });
+    // Initial fetch
+    _refreshAccounts();
+    _refreshCategories();
+    _refreshTransactions();
   }
 
-// --- 3. WATCH DATA (For the Dashboard) ---
-  
-  // Listen to Accounts (for Total Balance & Account Cards)
-  Stream<List<Account>> streamAccounts() async* {
-    yield* isar.accounts.where().watch(fireImmediately: true);
+  // --- STREAMS ---
+  Stream<List<Account>> streamAccounts() {
+    _refreshAccounts(); 
+    return _accountStreamController.stream;
   }
 
-  // Listen to Transactions (for Recent List)
-  Stream<List<Transaction>> streamRecentTransactions() async* {
-    yield* isar.transactions.where().sortByDateDesc().watch(fireImmediately: true);
+  Stream<List<Category>> streamCategories() {
+    _refreshCategories();
+    return _categoryStreamController.stream;
   }
 
-// --- 4. CATEGORY LOGIC ---
-  
-  // Listen to Categories (so we can see the budget limits)
-  Stream<List<Category>> streamCategories() async* {
-    yield* isar.categorys.where().watch(fireImmediately: true);
+  Stream<List<model.Transaction>> streamRecentTransactions() {
+    _refreshTransactions();
+    return _transactionStreamController.stream;
   }
 
-  // Update a Category (e.g., Set Budget)
-  Future<void> updateCategoryBudget(int id, double newBudget) async {
-    await isar.writeTxn(() async {
-      final category = await isar.categorys.get(id);
-      if (category != null) {
-        category.budget = newBudget;
-        await isar.categorys.put(category);
-      }
-    });
-  }
-// --- 5. GET BALANCE HELPER ---
-  Future<double> getBalance(String accountName) async {
-    final account = await isar.accounts.filter().nameEqualTo(accountName).findFirst();
-    return account?.balance ?? 0.0;
+  // --- HELPERS to refresh Streams ---
+  Future<void> _refreshAccounts() async {
+    if (_database == null) return;
+    final data = await _database!.query('accounts');
+    final accounts = data.map((e) => Account.fromMap(e)).toList();
+    _accountStreamController.add(accounts);
   }
 
-  // --- HELPER: ADD DEFAULT DATA ---
-  Future<void> _seedDefaultData() async {
-    final defaultAccounts = [
-      Account()..name = "Cash"..type = "Cash"..balance = 0.0..currency = "LKR",
-      Account()..name = "HNB Bank"..type = "Bank"..balance = 0.0..currency = "LKR",
-      Account()..name = "Wallet"..type = "Wallet"..balance = 0.0..currency = "LKR",
-    ];
-
-    final defaultCategories = [
-      Category()..name = "Salary"..isExpense = false..iconName = "money"..colorValue = 0xFF4CAF50,
-      Category()..name = "Food"..isExpense = true..iconName = "fastfood"..colorValue = 0xFFF44336,
-      Category()..name = "Transport"..isExpense = true..iconName = "commute"..colorValue = 0xFF2196F3,
-      Category()..name = "Bills"..isExpense = true..iconName = "receipt"..colorValue = 0xFFFF9800,
-    ];
-
-    await isar.writeTxn(() async {
-      await isar.accounts.putAll(defaultAccounts);
-      await isar.categorys.putAll(defaultCategories);
-    });
+  Future<void> _refreshCategories() async {
+    if (_database == null) return;
+    final data = await _database!.query('categories');
+    final categories = data.map((e) => Category.fromMap(e)).toList();
+    _categoryStreamController.add(categories);
   }
 
-// --- 6. MANAGE DATA (Profile Page) ---
-
-  Future<void> saveCategory(Category category) async {
-    await isar.writeTxn(() async {
-      await isar.categorys.put(category);
-    });
+  Future<void> _refreshTransactions() async {
+    if (_database == null) return;
+    final data = await _database!.query('transactions', orderBy: 'date DESC');
+    final txs = data.map((e) => model.Transaction.fromMap(e)).toList();
+    _transactionStreamController.add(txs);
   }
 
-  Future<void> deleteCategory(int id) async {
-    await isar.writeTxn(() async {
-      await isar.categorys.delete(id);
-    });
-  }
-
+  // --- METHODS ---
   Future<void> saveAccount(Account account) async {
-    await isar.writeTxn(() async {
-      await isar.accounts.put(account);
-    });
+    await _database!.insert('accounts', account.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    _refreshAccounts();
   }
 
   Future<void> deleteAccount(int id) async {
-    await isar.writeTxn(() async {
-      await isar.accounts.delete(id);
-    });
+    await _database!.delete('accounts', where: 'id = ?', whereArgs: [id]);
+    _refreshAccounts();
   }
 
-// --- UTILS ---
+  Future<double> getBalance(String accountName) async {
+    final result = await _database!.query('accounts', where: 'name = ?', whereArgs: [accountName]);
+    if (result.isNotEmpty) return result.first['balance'] as double;
+    return 0.0;
+  }
+
+  Future<void> saveCategory(Category category) async {
+    await _database!.insert('categories', category.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    _refreshCategories();
+  }
+  
+  Future<void> deleteCategory(int id) async {
+     await _database!.delete('categories', where: 'id = ?', whereArgs: [id]);
+     _refreshCategories();
+  }
+
+  Future<void> updateCategoryBudget(int id, double newBudget) async {
+    await _database!.update('categories', {'budget': newBudget}, where: 'id = ?', whereArgs: [id]);
+    _refreshCategories();
+  }
+
+  Future<void> saveTransaction({
+    required double amount,
+    required String note,
+    required int type,
+    required String accountName,
+    String? categoryName,
+    String? destinationAccountName,
+  }) async {
+    final tx = model.Transaction(
+      id: DateTime.now().millisecondsSinceEpoch,
+      amount: amount,
+      note: note,
+      date: DateTime.now(),
+      type: type,
+      accountName: accountName,
+      categoryName: categoryName,
+      destinationAccountName: destinationAccountName,
+    );
+
+    await _database!.insert('transactions', tx.toMap());
+
+    if (type == 0) {
+      await _updateBalance(accountName, amount);
+    } else if (type == 1) {
+      await _updateBalance(accountName, -amount);
+    } else if (type == 2 && destinationAccountName != null) {
+      await _updateBalance(accountName, -amount);
+      await _updateBalance(destinationAccountName, amount);
+    }
+
+    _refreshTransactions();
+    _refreshAccounts();
+  }
+
+  Future<void> _updateBalance(String accountName, double change) async {
+    final currentBal = await getBalance(accountName);
+    await _database!.update('accounts', {'balance': currentBal + change}, where: 'name = ?', whereArgs: [accountName]);
+  }
+
   Future<void> cleanDb() async {
-    await isar.writeTxn(() async {
-      await isar.transactions.clear();
-      await isar.accounts.clear();
-      await isar.categorys.clear(); // Remember: spelling is 'categorys'
+    await _database!.delete('transactions');
+    await _database!.delete('accounts');
+    await _database!.delete('categories');
+    
+    // Restore defaults
+    await _insertDefaultCategories(_database!);
+    await _insertDefaultAccounts(_database!); // <--- Restores defaults on clear
+    
+    _refreshAccounts();
+    _refreshCategories();
+    _refreshTransactions();
+  }
+
+  // --- DEFAULT DATA ---
+  static Future<void> _insertDefaultCategories(Database db) async {
+    final defaults = [
+      Category(id: 1, name: "Salary", iconName: "attach_money", colorValue: Colors.green.value, isExpense: false),
+      Category(id: 2, name: "Business", iconName: "business", colorValue: Colors.blue.value, isExpense: false),
+      Category(id: 3, name: "Gift", iconName: "card_giftcard", colorValue: Colors.purple.value, isExpense: false),
+      Category(id: 4, name: "Food", iconName: "fastfood", colorValue: Colors.orange.value, isExpense: true),
+      Category(id: 5, name: "Transport", iconName: "directions_bus", colorValue: Colors.blueAccent.value, isExpense: true),
+      Category(id: 6, name: "Shopping", iconName: "shopping_cart", colorValue: Colors.pink.value, isExpense: true),
+      Category(id: 7, name: "Bills", iconName: "receipt", colorValue: Colors.red.value, isExpense: true),
+      Category(id: 8, name: "Health", iconName: "medical_services", colorValue: Colors.teal.value, isExpense: true),
+    ];
+    for (var cat in defaults) {
+      await db.insert('categories', cat.toMap(), conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+  }
+
+  // NEW: Helper to insert default accounts
+  static Future<void> _insertDefaultAccounts(Database db) async {
+    await db.insert('accounts', {
+      'id': 1, // Fixed ID
+      'name': "Cash",
+      'balance': 0.0,
+      'type': "Cash",
+      'currency': "LKR"
     });
-    // Add defaults back so the app doesn't crash
-    await _seedDefaultData(); 
+    await db.insert('accounts', {
+      'id': 2, // Fixed ID
+      'name': "Wallet",
+      'balance': 0.0,
+      'type': "Wallet",
+      'currency': "LKR"
+    });
   }
 }
