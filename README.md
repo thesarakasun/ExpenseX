@@ -1,4 +1,4 @@
-**ExpenseX** is a modern, offline-first personal finance application built with **Flutter**. It allows users to seamlessly track income and expenses, manage multiple accounts, and visualize financial health through interactive charts—all secured locally on the device using **SQLite**.
+**ExpenseX** is a modern, offline-first personal finance application built with **Flutter**. It allows users to seamlessly track income and expenses, manage multiple accounts and visualize financial health through interactive charts, all secured locally on the device using **SQLite**.
 
 ---
 
