@@ -61,13 +61,13 @@ cd expensex
 
 - Important: Ensure you have an Android Emulator running. Do not run on Windows Desktop as GPS features require mobile sensors.
 
-- flutter run
+flutter run
 
 
 ### 5.🔒 Permissions
 
-ACCESS_FINE_LOCATION-Required to detect the user's country for currency automation.
-ACCESS_COARSE_LOCATION-Fallback for when precise GPS is unavailable.
-INTERNET-Minimal usage required by the Geocoding API to resolve coordinates.
-READ_EXTERNAL_STORAGE-Required to pick a profile picture from the gallery.
+- ACCESS_FINE_LOCATION - Required to detect the user's country for currency automation.
+- ACCESS_COARSE_LOCATION - Fallback for when precise GPS is unavailable.
+- INTERNET - Minimal usage required by the Geocoding API to resolve coordinates.
+- READ_EXTERNAL_STORAGE - Required to pick a profile picture from the gallery.
 
