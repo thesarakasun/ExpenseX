@@ -60,7 +60,7 @@ class DatabaseService {
 
         // 4. Insert Defaults
         await _insertDefaultCategories(db);
-        await _insertDefaultAccounts(db); // <--- NEW: Auto-create accounts
+        await _insertDefaultAccounts(db); 
       },
     );
     
@@ -108,7 +108,7 @@ class DatabaseService {
     _transactionStreamController.add(txs);
   }
 
-  // --- METHODS ---
+  // --- ACCOUNT METHODS ---
   Future<void> saveAccount(Account account) async {
     await _database!.insert('accounts', account.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
     _refreshAccounts();
@@ -125,6 +125,7 @@ class DatabaseService {
     return 0.0;
   }
 
+  // --- CATEGORY METHODS ---
   Future<void> saveCategory(Category category) async {
     await _database!.insert('categories', category.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
     _refreshCategories();
@@ -140,6 +141,7 @@ class DatabaseService {
     _refreshCategories();
   }
 
+  // --- TRANSACTION METHODS ---
   Future<void> saveTransaction({
     required double amount,
     required String note,
@@ -174,6 +176,71 @@ class DatabaseService {
     _refreshAccounts();
   }
 
+  // --- NEW: EDIT & DELETE LOGIC ---
+
+  // 1. Delete Transaction and Fix Balance
+  Future<void> deleteTransaction(int id) async {
+    final db = _database!;
+    // Get the transaction first to know how much to revert
+    final List<Map<String, dynamic>> result = await db.query('transactions', where: 'id = ?', whereArgs: [id]);
+    if (result.isEmpty) return;
+    
+    final tx = model.Transaction.fromMap(result.first);
+
+    // Revert the balance effect
+    await _revertBalance(tx.accountName, tx.amount, tx.type, tx.destinationAccountName);
+
+    // Delete the row
+    await db.delete('transactions', where: 'id = ?', whereArgs: [id]);
+    
+    _refreshTransactions();
+    _refreshAccounts();
+  }
+
+  // 2. Edit Amount and Fix Balance
+  Future<void> updateTransactionAmount(int id, double newAmount) async {
+    final db = _database!;
+    // Get old transaction
+    final List<Map<String, dynamic>> result = await db.query('transactions', where: 'id = ?', whereArgs: [id]);
+    if (result.isEmpty) return;
+    
+    final tx = model.Transaction.fromMap(result.first);
+
+    // 1. Undo the Old Amount
+    await _revertBalance(tx.accountName, tx.amount, tx.type, tx.destinationAccountName);
+
+    // 2. Apply the New Amount
+    if (tx.type == 0) { // Income
+      await _updateBalance(tx.accountName, newAmount);
+    } else if (tx.type == 1) { // Expense
+      await _updateBalance(tx.accountName, -newAmount);
+    } else if (tx.type == 2 && tx.destinationAccountName != null) { // Transfer
+      await _updateBalance(tx.accountName, -newAmount);
+      await _updateBalance(tx.destinationAccountName!, newAmount);
+    }
+
+    // 3. Update the Transaction Row
+    await db.update('transactions', {'amount': newAmount}, where: 'id = ?', whereArgs: [id]);
+
+    _refreshTransactions();
+    _refreshAccounts();
+  }
+
+  // Helper to undo a transaction's effect
+  Future<void> _revertBalance(String accountName, double amount, int type, String? destAccount) async {
+    if (type == 0) {
+      // Was Income (Added), so we Deduct it
+      await _updateBalance(accountName, -amount);
+    } else if (type == 1) {
+      // Was Expense (Deducted), so we Add it back
+      await _updateBalance(accountName, amount);
+    } else if (type == 2 && destAccount != null) {
+      // Was Transfer, reverse both
+      await _updateBalance(accountName, amount); // Give back to source
+      await _updateBalance(destAccount, -amount); // Take from destination
+    }
+  }
+
   Future<void> _updateBalance(String accountName, double change) async {
     final currentBal = await getBalance(accountName);
     await _database!.update('accounts', {'balance': currentBal + change}, where: 'name = ?', whereArgs: [accountName]);
@@ -186,7 +253,7 @@ class DatabaseService {
     
     // Restore defaults
     await _insertDefaultCategories(_database!);
-    await _insertDefaultAccounts(_database!); // <--- Restores defaults on clear
+    await _insertDefaultAccounts(_database!); 
     
     _refreshAccounts();
     _refreshCategories();
@@ -210,17 +277,16 @@ class DatabaseService {
     }
   }
 
-  // NEW: Helper to insert default accounts
   static Future<void> _insertDefaultAccounts(Database db) async {
     await db.insert('accounts', {
-      'id': 1, // Fixed ID
+      'id': 1, 
       'name': "Cash",
       'balance': 0.0,
       'type': "Cash",
       'currency': "LKR"
     });
     await db.insert('accounts', {
-      'id': 2, // Fixed ID
+      'id': 2, 
       'name': "Wallet",
       'balance': 0.0,
       'type': "Wallet",
