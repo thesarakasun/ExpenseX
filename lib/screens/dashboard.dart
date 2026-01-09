@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; // Needed for Date Formatting
-import 'package:shared_preferences/shared_preferences.dart'; // <-- NEW: Import this
+import 'package:flutter/services.dart'; // For number input
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_slidable/flutter_slidable.dart'; // <-- NEW: Import this
 import '../models/account.dart';
 import '../models/transaction.dart';
 import '../services/database_service.dart';
@@ -15,17 +17,15 @@ class Dashboard extends StatefulWidget {
 }
 
 class _DashboardState extends State<Dashboard> {
-  // 1. STATE VARIABLES
   DateTime _selectedMonth = DateTime.now();
-  String _currency = "LKR"; // <-- NEW: Default currency
+  String _currency = "LKR";
 
   @override
   void initState() {
     super.initState();
-    _loadCurrency(); // <-- NEW: Load currency on start
+    _loadCurrency();
   }
 
-  // --- NEW: Load Currency Function ---
   Future<void> _loadCurrency() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -33,7 +33,6 @@ class _DashboardState extends State<Dashboard> {
     });
   }
 
-  // Helper to change months
   void _changeMonth(int monthsToAdd) {
     setState(() {
       _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + monthsToAdd, 1);
@@ -71,13 +70,11 @@ class _DashboardState extends State<Dashboard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  
-                  // --- SECTION A: TOTAL BALANCE ---
+                  // TOTAL BALANCE
                   _buildTotalBalanceCard(totalBalance),
-                  
                   const SizedBox(height: 20),
 
-                  // --- SECTION B: ACCOUNTS ---
+                  // ACCOUNTS
                   const Text("Accounts", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
                   SizedBox(
@@ -94,14 +91,11 @@ class _DashboardState extends State<Dashboard> {
 
                   const SizedBox(height: 20),
 
-                  // --- SECTION C: RECENT TRANSACTIONS HEADER & FILTER ---
-                  // 2. MONTH SELECTOR UI
+                  // TRANSACTIONS
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text("Recent Transactions", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      
-                      // Month Selector Buttons
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -140,8 +134,6 @@ class _DashboardState extends State<Dashboard> {
                       }
 
                       final allTransactions = txSnapshot.data!;
-                      
-                      // 3. APPLY FILTER: Only show transactions for _selectedMonth
                       final transactions = allTransactions.where((tx) {
                         return tx.date.year == _selectedMonth.year && 
                                tx.date.month == _selectedMonth.month;
@@ -163,27 +155,8 @@ class _DashboardState extends State<Dashboard> {
                       
                       return Column(
                         children: transactions.map((tx) {
-                          // 1. Color & Icon Logic
-                          Color color = tx.type == 0 ? Colors.green : (tx.type == 1 ? Colors.red : Colors.blue);
-                          String sign = tx.type == 0 ? "+" : (tx.type == 1 ? "-" : "");
-                          IconData icon = tx.type == 0 ? Icons.arrow_downward : (tx.type == 1 ? Icons.arrow_upward : Icons.swap_horiz);
-                          
-                          // 2. Format Date
-                          String formattedDate = DateFormat('MMM d, h:mm a').format(tx.date);
-
-                          // 3. Construct Subtitle
-                          String accountInfo = tx.accountName;
-                          if (tx.type == 2 && tx.destinationAccountName != null) {
-                            accountInfo = "${tx.accountName} ➝ ${tx.destinationAccountName}";
-                          }
-
-                          return _buildTransactionItem(
-                            tx.categoryName ?? "Transfer", 
-                            "$accountInfo  •  $formattedDate", 
-                            "$sign $_currency ${tx.amount.toStringAsFixed(0)}", // <-- UPDATED: Uses _currency
-                            color,
-                            icon
-                          );
+                          // PASS THE FULL TRANSACTION OBJECT TO THE BUILDER
+                          return _buildTransactionItem(context, tx); 
                         }).toList(),
                       );
                     }
@@ -218,7 +191,7 @@ class _DashboardState extends State<Dashboard> {
           const Text("Total Balance", style: TextStyle(color: Colors.white70, fontSize: 16)),
           const SizedBox(height: 5),
           Text(
-            "$_currency ${amount.toStringAsFixed(2)}", // <-- UPDATED: Uses _currency
+            "$_currency ${amount.toStringAsFixed(2)}",
             style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
           ),
         ],
@@ -244,32 +217,139 @@ class _DashboardState extends State<Dashboard> {
           const Spacer(),
           Text(name, style: const TextStyle(color: Colors.grey)),
           const SizedBox(height: 4),
-          Text("$_currency ${balance.toStringAsFixed(0)}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), // <-- UPDATED: Uses _currency
+          Text("$_currency ${balance.toStringAsFixed(0)}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         ],
       ),
     );
   }
 
-  Widget _buildTransactionItem(String title, String subtitle, String amount, Color color, IconData icon) {
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: color.withOpacity(0.1),
-          child: Icon(icon, color: color),
+  // --- NEW: SLIDABLE TRANSACTION ITEM ---
+  Widget _buildTransactionItem(BuildContext context, Transaction tx) {
+    Color color = tx.type == 0 ? Colors.green : (tx.type == 1 ? Colors.red : Colors.blue);
+    String sign = tx.type == 0 ? "+" : (tx.type == 1 ? "-" : "");
+    IconData icon = tx.type == 0 ? Icons.arrow_downward : (tx.type == 1 ? Icons.arrow_upward : Icons.swap_horiz);
+    String formattedDate = DateFormat('MMM d, h:mm a').format(tx.date);
+
+    String accountInfo = tx.accountName;
+    if (tx.type == 2 && tx.destinationAccountName != null) {
+      accountInfo = "${tx.accountName} ➝ ${tx.destinationAccountName}";
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Slidable(
+        key: ValueKey(tx.id),
+        endActionPane: ActionPane(
+          motion: const ScrollMotion(),
+          children: [
+            // EDIT BUTTON
+            SlidableAction(
+              onPressed: (context) => _showEditDialog(context, tx),
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              icon: Icons.edit,
+              label: 'Edit',
+            ),
+            // DELETE BUTTON
+            SlidableAction(
+              onPressed: (context) => _deleteTransaction(context, tx.id),
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              icon: Icons.delete,
+              label: 'Delete',
+              borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(12),
+                bottomRight: Radius.circular(12),
+              ),
+            ),
+          ],
         ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)), 
-        trailing: Text(
-          amount,
-          style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 15),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12), // Same radius as card
+          ),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: color.withOpacity(0.1),
+              child: Icon(icon, color: color),
+            ),
+            title: Text(tx.categoryName ?? "Transfer", style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text("$accountInfo  •  $formattedDate", style: const TextStyle(fontSize: 12, color: Colors.grey)), 
+            trailing: Text(
+              "$sign $_currency ${tx.amount.toStringAsFixed(0)}",
+              style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+          ),
         ),
       ),
     );
   }
   
+  // --- ACTIONS ---
+  
+  void _deleteTransaction(BuildContext context, int id) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Delete Transaction?"),
+        content: const Text("This will reverse the balance effect on your accounts."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () async {
+              await widget.databaseService.deleteTransaction(id);
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditDialog(BuildContext context, Transaction tx) {
+    final TextEditingController amountController = TextEditingController(text: tx.amount.toStringAsFixed(0));
+    
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Edit Amount"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Only the amount can be edited. This will adjust your account balance accordingly.", style: TextStyle(fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 15),
+            TextField(
+              controller: amountController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                prefixText: "$_currency ",
+                border: const OutlineInputBorder(),
+                label: const Text("New Amount"),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+          ElevatedButton(
+            onPressed: () async {
+              final double? newAmount = double.tryParse(amountController.text);
+              if (newAmount == null || newAmount <= 0) return;
+
+              await widget.databaseService.updateTransactionAmount(tx.id, newAmount);
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white),
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
+  }
+
   Color _getAccountColor(String accountName) {
     switch (accountName) {
       case "HNB Bank": return Colors.orange;
